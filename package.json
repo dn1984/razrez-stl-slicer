@@ -1,0 +1,30 @@
+{
+  "name": "razrez-stl-slicer",
+  "private": false,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Разрез — офлайн STL slicer with interlocking joints for 3D printing",
+  "keywords": ["stl", "slicer", "3d-printing", "mesh", "manifold", "threejs", "offline"],
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:only": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "node tests/e2e/run.mjs"
+  },
+  "dependencies": {
+    "manifold-3d": "3.5.5",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "playwright-core": "^1.56.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^3.2.4"
+  }
+}

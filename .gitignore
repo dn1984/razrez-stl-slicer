@@ -1,0 +1,29 @@
+# Dependencies and caches
+node_modules/
+.vite/
+*.tsbuildinfo
+
+# Build output (dist/index.html is generated locally; do not commit generated artifacts)
+dist/
+
+# Test artifacts
+coverage/
+tests/e2e/out/
+*.snap
+
+# Local debug/recovery artifacts
+*.log
+.DS_Store
+Thumbs.db
+
+# Local STL/models and project files
+*.stl
+*.3mf
+*.obj
+*.razrez.json
+
+# IDE / OS
+.vscode/
+.idea/
+*.user
+*.suo
