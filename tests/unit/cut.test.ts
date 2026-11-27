@@ -339,13 +339,47 @@ describe('ограниченная область реза', () => {
     });
     expect(out.stats[0].ok).toBe(true);
 
-    const a = out.parts.find((p) => p.side === 'A')!.manifold;
-    const b = out.parts.find((p) => p.side === 'B')!.manifold;
-    const ab = a.boundingBox();
+    // Части разбиты на связные куски, поэтому габарит считаем по всем частям
+    // нужной стороны, а не по первой попавшейся.
+    const bboxOf = (side: 'A' | 'B') => {
+      const boxes = out.parts.filter((p) => p.side === side).map((p) => p.manifold.boundingBox());
+      expect(boxes.length).toBeGreaterThan(0);
+      return {
+        min: [Math.min(...boxes.map((b) => b.min[0])), Math.min(...boxes.map((b) => b.min[1]))],
+        max: [Math.max(...boxes.map((b) => b.max[0])), Math.max(...boxes.map((b) => b.max[1]))],
+      };
+    };
+    const ab = bboxOf('A');
+    const bb = bboxOf('B');
     // Зарезана только узкая деталь у y ≈ 0; широкая на y=100 остаётся целой.
     expect(ab.max[1]).toBeLessThan(30);
     expect(ab.min[1]).toBeGreaterThan(-30);
-    expect(b.boundingBox().max[1]).toBeGreaterThan(120);
+    expect(bb.max[1]).toBeGreaterThan(120);
+  });
+
+  it('несвязанные куски одной стороны выдаются отдельными частями', async () => {
+    await boot();
+    // Две отдельные заготовки рядом. Плоскость режет обе сразу, но куски
+    // физически не связаны — значит и частей должно быть больше двух.
+    const left = boxSoup(20, 20, 20, [0, -40, 0]);
+    const right = boxSoup(20, 20, 20, [0, 40, 0]);
+    const merged = new Float32Array(left.length + right.length);
+    merged.set(left, 0);
+    merged.set(right, left.length);
+    const { manifold } = build(merged);
+
+    const out = runCuts({ manifold, cuts: [makeCut()] });
+    expect(out.stats[0].ok).toBe(true);
+    // Каждая заготовка делится на верх и низ: 4 несвязанных куска.
+    expect(out.parts).toHaveLength(4);
+    // И каждый кусок — самостоятельное замкнутое тело.
+    for (const part of out.parts) {
+      expect(part.manifold.status()).toBe('NoError');
+      expect(part.manifold.numVert ? part.manifold.numVert() : 1).toBeGreaterThan(0);
+      expect(part.manifold.volume()).toBeGreaterThan(1);
+    }
+    const sum = out.parts.reduce((s, p) => s + p.manifold.volume(), 0);
+    expect(Math.abs(sum - 2 * 20 * 20 * 20)).toBeLessThan(1e-6);
   });
 
   it('окно мимо модели даёт понятную ошибку вместо пустого реза', async () => {

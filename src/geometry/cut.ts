@@ -265,12 +265,21 @@ function splitAndJoin(
   const profile: ProfileFunction = buildProfile(cut.profile, section.maxRadius);
   const box = local.boundingBox();
   const diag = Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]);
-  // Режущее тело — тело вращения вокруг центра профиля. Если ось пустить через
-  // начало координат, а сечение лежит в стороне (рез мимо центра детали), тело
-  // не накрывает сечение целиком и куски «чужой» стороны уезжают в другую
-  // часть: рез получается выгрызенным по дуге, с выступающими углами.
+  // Режущее тело — тело вращения вокруг центра профиля. Радиус обязан накрывать
+  // не только сечение в плоскости, но и ВСЮ модель в координатах u,v: деталь,
+  // которая расширяется в стороне от среза (крылья, стабилизаторы), иначе
+  // выходит за цилиндр, и её край уезжает в «чужую» часть. Так получались
+  // куски не на своей стороне плоскости.
+  const cu = section.center[0];
+  const cv = section.center[1];
+  const reach = Math.max(
+    Math.hypot(box.min[0] - cu, box.min[1] - cv),
+    Math.hypot(box.min[0] - cu, box.max[1] - cv),
+    Math.hypot(box.max[0] - cu, box.min[1] - cv),
+    Math.hypot(box.max[0] - cu, box.max[1] - cv),
+  );
   const cutters = buildCutters(profile, {
-    radius: Math.max(section.maxRadius * 1.05 + 1, 1),
+    radius: Math.max(reach * 1.02 + 1, section.maxRadius * 1.05 + 1, 1),
     height: diag + Math.abs(profile.peak) * 2 + 10,
     center: section.center,
   });
@@ -674,6 +683,42 @@ export function runCuts(input: CutInput): CutOutput {
 
     current = next;
   }
+
+  // Одна плоскость часто отрезает сразу несколько несвязанных кусков: например,
+  // крыло и хвостовой стабилизатор оказываются «одной частью», хотя это разные
+  // тела. Разделяем результат на связные куски — иначе их нельзя ни разнести,
+  // ни склеить по отдельности.
+  const exploded: { manifold: Manifold; side: 'A' | 'B' }[] = [];
+  for (const part of current) {
+    let comps: Manifold[] = [];
+    try {
+      comps = part.manifold.decompose();
+    } catch {
+      comps = [];
+    }
+    // decompose() отдаёт и вырожденные оболочки нулевого объёма (артефакт
+    // булевых операций с кривым срезом). Их нельзя показывать как части.
+    const total = safeVolume(part.manifold);
+    const minComponent = Math.max(0.01, total * 1e-6);
+    const real = comps.filter((c) => safeVolume(c) > minComponent);
+    if (real.length > 1) {
+      owned.delete(part.manifold);
+      part.manifold.delete();
+      for (const c of comps) {
+        if (real.includes(c)) {
+          owned.add(c);
+          exploded.push({ manifold: c, side: part.side });
+        } else {
+          c.delete();
+        }
+      }
+    } else {
+      // Куски не разделились — оставляем исходное тело, копии освобождаем.
+      for (const c of comps) c.delete();
+      exploded.push(part);
+    }
+  }
+  current = exploded;
 
   // Удаляем промежуточные тела (исходное тело остаётся у вызывающего).
   for (const m of owned) {
