@@ -458,7 +458,22 @@ bindRange('tongue-depth', 'tongueDepth', (v) => `${fmt(v, 1)} мм`);
 // Второй рез
 bindSwitch('extra-enabled', 'extraEnabled', (on) => {
   toggleGroup('extra', on);
-  if (on) syncRangeLimits();
+  if (on) {
+    syncRangeLimits();
+    // Если первый рез ограничен окном, второй по умолчанию тоже ограничиваем:
+    // иначе он молча режет всю деталь насквозь и «отрезает» нос с хвостом.
+    if (state.cutAreaEnabled && !state.extraAreaEnabled) {
+      state.extraAreaEnabled = true;
+      state.extraWidth = state.cutWidth;
+      state.extraHeight = state.cutHeight;
+      state.extraOffsetU = 0;
+      state.extraOffsetV = 0;
+      const areaSwitch = $('#extra-area-enabled') as HTMLInputElement | null;
+      if (areaSwitch) areaSwitch.checked = true;
+      toggleGroup('extra-area', true);
+      syncInputsFromState();
+    }
+  }
   updateExtraInfo();
   updatePlaneVisual();
   schedulePreview(0);
@@ -562,6 +577,29 @@ function updateExtraInfo() {
       `Ось ${axisName}, смещение ${fmt(state.extraPos, 1)} мм, наклон ${fmt(state.extraParallel ? state.planeAngle : state.extraAngle, 0)}°.`,
     ),
   );
+
+  // Главная ловушка: один рез ограничен окном, а второй — нет. Тогда второй
+  // проходит деталь насквозь, и «отрезается» всё, что попало под плоскость.
+  if (state.cutAreaEnabled !== state.extraAreaEnabled) {
+    const bounded = state.cutAreaEnabled ? 'первый' : 'второй';
+    const free = state.cutAreaEnabled ? 'Второй' : 'Первый';
+    notes.push(
+      note(
+        'warn',
+        'Без области',
+        `${free} рез не ограничен окном, поэтому режет деталь насквозь (ограничен только ${bounded}). Включите «Ограничить область» и у него, если нужно пилить одну часть.`,
+      ),
+    );
+  } else if (state.extraAreaEnabled) {
+    notes.push(
+      note(
+        'ok',
+        'Область',
+        `Окно второго реза: ${fmt(state.extraWidth, 0)} × ${fmt(state.extraHeight, 0)} мм.`,
+      ),
+    );
+  }
+
   host.innerHTML = notes.join('');
 }
 
@@ -853,6 +891,9 @@ function renderChecks(stats: CutStats[] | null) {
     );
 
     rows.push(checkRow('ok', '·', 'Площадь среза', `${fmt(s.sectionArea / 100, 1)} см²`));
+    if (s.splitCount > 0) {
+      rows.push(checkRow('ok', '·', `${s.name}: разрезов`, `${s.splitCount}`));
+    }
     if (s.stepApplied) rows.push(checkRow('ok', '·', 'Ступенька', `${fmt(s.stepWidth, 1)} мм`));
     if (s.pinCount > 0) rows.push(checkRow('ok', '·', 'Штифты', `${s.pinCount} шт`));
     if (s.tongueApplied) rows.push(checkRow('ok', '·', 'Шип-паз', 'есть'));

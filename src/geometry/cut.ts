@@ -559,6 +559,7 @@ export function runCuts(input: CutInput): CutOutput {
       sectionArea: 0,
       sectionContours: 0,
       pinCount: 0,
+      splitCount: 0,
       stepApplied: false,
       stepWidth: 0,
       tongueApplied: false,
@@ -646,6 +647,7 @@ export function runCuts(input: CutInput): CutOutput {
 
     cutStats.ok = true;
     cutStats.ms = performance.now() - started;
+    cutStats.splitCount = pairs.length;
     preview.ok = true;
     stats.push(cutStats);
     previews.push(preview);

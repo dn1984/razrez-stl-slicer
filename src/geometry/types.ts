@@ -95,6 +95,8 @@ export interface CutStats {
   sectionArea: number;
   sectionContours: number;
   pinCount: number;
+  /** Сколько разрезов сделал этот рез (каждый добавляет одну часть). */
+  splitCount: number;
   stepApplied: boolean;
   /** Фактическая ширина ступеньки (может быть меньше заданной). */
   stepWidth: number;
