@@ -62,6 +62,10 @@ function updateAreaAxesHint(basis: { u: Vec3; v: Vec3 }) {
   text.textContent = `Оси окна: ширина вдоль ${axisName(basis.u)}, высота вдоль ${axisName(basis.v)}.`;
 }
 
+function setAreaCoverageWarning(covered: boolean) {
+  document.getElementById('cut-area-full')?.classList.toggle('hidden', !covered);
+}
+
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
 const $$ = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)];
 
@@ -634,6 +638,7 @@ async function runPreview() {
     const response = await ask<PreviewResponse>({ type: 'preview', cut: primaryCut(state) });
     if (token !== previewToken) return;
     viewer.setPreview(response.preview, state.pinDiameter / 2);
+    setAreaCoverageWarning(Boolean(response.preview?.area?.coversSection));
     if (response.preview && !response.preview.ok) {
       setStatus('warn', 'Плоскость вне модели', 'Сдвиньте плоскость ближе к центру детали.');
     }

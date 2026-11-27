@@ -182,12 +182,21 @@ interface SplitPair {
 }
 
 /** Прямоугольник ограниченной области реза в координатах сечения. */
-function areaRect(area: CutAreaSpec | undefined, center: Vec2): { min: Vec2; max: Vec2 } | null {
+/**
+ * Прямоугольник ограниченной области реза в координатах сечения.
+ *
+ * Сдвиг отсчитывается от начала координат плоскости (точки, вокруг которой
+ * строится базис сечения), а НЕ от центроида сечения. Так окно совпадает с тем
+ * прямоугольником, который рисуется в сцене: у несимметричной модели (крыло,
+ * фюзеляж, хвост) центроид уезжает в сторону, и окно резало совсем не там,
+ * где его видел пользователь.
+ */
+function areaRect(area: CutAreaSpec | undefined, _center: Vec2): { min: Vec2; max: Vec2 } | null {
   if (!area?.enabled) return null;
   const w = Math.max(0.5, area.width);
   const h = Math.max(0.5, area.height);
-  const cx = center[0] + (area.offsetU ?? 0);
-  const cy = center[1] + (area.offsetV ?? 0);
+  const cx = area.offsetU ?? 0;
+  const cy = area.offsetV ?? 0;
   return { min: [cx - w / 2, cy - h / 2], max: [cx + w / 2, cy + h / 2] };
 }
 

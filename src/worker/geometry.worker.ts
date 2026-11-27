@@ -238,8 +238,10 @@ function computePreview(m: Manifold, cut: CutSettings): CutPreview {
   if (area?.enabled) {
     const w = Math.max(0.5, area.width);
     const h = Math.max(0.5, area.height);
-    const cx = center[0] + (area.offsetU ?? 0);
-    const cy = center[1] + (area.offsetV ?? 0);
+    // Same reference point as the boolean cutter: the plane origin, not the
+    // section centroid, so the drawn window is exactly the cut window.
+    const cx = area.offsetU ?? 0;
+    const cy = area.offsetV ?? 0;
     const rect: [number, number][] = [
       [cx - w / 2, cy - h / 2],
       [cx + w / 2, cy - h / 2],
@@ -259,10 +261,16 @@ function computePreview(m: Manifold, cut: CutSettings): CutPreview {
     } catch {
       shown = polygons;
     }
+    const coversSection =
+      cx - w / 2 <= b.min[0] + 1e-6 &&
+      cx + w / 2 >= b.max[0] - 1e-6 &&
+      cy - h / 2 <= b.min[1] + 1e-6 &&
+      cy + h / 2 >= b.max[1] - 1e-6;
     result.area = {
       width: w,
       height: h,
       center: toWorldPoint(cx, cy, 0),
+      coversSection,
     };
   }
 

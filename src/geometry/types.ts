@@ -132,7 +132,7 @@ export interface CutPreview {
   /** Расстояния от модели до плоскости по нормали: отрицательное — за плоскостью. */
   planeDistance: { min: number; max: number };
   /** Окно ограниченной области реза в мировых координатах (если включено). */
-  area: { width: number; height: number; center: Vec3 } | null;
+  area: { width: number; height: number; center: Vec3; coversSection?: boolean } | null;
   ok: boolean;
   error?: string;
 }

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import type { CutPreview, PartGeometry, Vec3 } from '../geometry/types.ts';
+import { basisFromNormal } from '../geometry/math.ts';
 
 export interface PartView {
   id: string;
@@ -395,9 +396,26 @@ export class Viewer {
   }
 
   /** Положение плоскости: точка и нормаль. */
+  /**
+   * Ориентация плоскости — из того же базиса, что использует геометрия.
+   *
+   * setFromUnitVectors(0,0,1 → n) даёт ПРОИЗВОЛЬНЫЙ поворот вокруг нормали:
+   * для оси X он поворачивает квадрат на 90° относительно базиса сечения.
+   * Ширина и высота окна оказывались поменяны местами, и рамка показывала не
+   * то место, где реально режется. Берём u и v ровно такие же, как в cut.ts.
+   */
+  private planeQuaternion(normal: Vec3): THREE.Quaternion {
+    const basis = basisFromNormal(normal);
+    const u = new THREE.Vector3(basis.u[0], basis.u[1], basis.u[2]);
+    const v = new THREE.Vector3(basis.v[0], basis.v[1], basis.v[2]);
+    const n = new THREE.Vector3(basis.n[0], basis.n[1], basis.n[2]);
+    const m = new THREE.Matrix4().makeBasis(u, v, n);
+    return new THREE.Quaternion().setFromRotationMatrix(m);
+  }
+
+  /** Положение плоскости: точка и нормаль. */
   setPlane(point: Vec3, normal: Vec3, visible: boolean) {
-    const n = new THREE.Vector3(normal[0], normal[1], normal[2]).normalize();
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    const q = this.planeQuaternion(normal);
     this.planeMesh.position.set(point[0], point[1], point[2]);
     this.planeMesh.quaternion.copy(q);
     this.planeMesh.visible = visible;
@@ -411,8 +429,7 @@ export class Viewer {
    * поэтому видно, что именно будет отрезано, а что останется целым.
    */
   setPlaneRect(point: Vec3, normal: Vec3, width: number, height: number, visible: boolean) {
-    const n = new THREE.Vector3(normal[0], normal[1], normal[2]).normalize();
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    const q = this.planeQuaternion(normal);
     this.planeMesh.scale.set(Math.max(0.5, width), Math.max(0.5, height), 1);
     this.planeEdge.scale.copy(this.planeMesh.scale);
     this.planeMesh.position.set(point[0], point[1], point[2]);
@@ -425,8 +442,7 @@ export class Viewer {
 
   /** Положение второй плоскости реза. */
   setPlane2(point: Vec3, normal: Vec3, visible: boolean) {
-    const n = new THREE.Vector3(normal[0], normal[1], normal[2]).normalize();
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    const q = this.planeQuaternion(normal);
     this.planeMesh2.position.set(point[0], point[1], point[2]);
     this.planeMesh2.quaternion.copy(q);
     this.planeMesh2.visible = visible;

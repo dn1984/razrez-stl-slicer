@@ -315,6 +315,39 @@ describe('ограниченная область реза', () => {
     expect(out.stats[0].intersectionVolume).toBeLessThan(0.5);
   });
 
+  it('окно отсчитывается от плоскости, а не от центроида сечения', async () => {
+    await boot();
+    // Несимметричное сечение: узкая деталь у y=0 и широкая у y=100.
+    // Центроид сечения уезжает к y≈75, а центр габарита — к y=60.
+    // Окно с нулевым сдвигом обязано стоять по центру ПЛОСКОСТИ (y=0),
+    // иначе рез уходит туда, где пользователь ничего не выбирал.
+    const narrow = boxSoup(100, 20, 10);
+    const wide = boxSoup(20, 60, 10, [0, 100, 0]);
+    const merged = new Float32Array(narrow.length + wide.length);
+    merged.set(narrow, 0);
+    merged.set(wide, narrow.length);
+    const { manifold } = build(merged);
+
+    const out = runCuts({
+      manifold,
+      cuts: [
+        makeCut({
+          plane: { point: [0, 0, 0], normal: [1, 0, 0] },
+          area: { enabled: true, width: 40, height: 40, offsetU: 0, offsetV: 0 },
+        }),
+      ],
+    });
+    expect(out.stats[0].ok).toBe(true);
+
+    const a = out.parts.find((p) => p.side === 'A')!.manifold;
+    const b = out.parts.find((p) => p.side === 'B')!.manifold;
+    const ab = a.boundingBox();
+    // Зарезана только узкая деталь у y ≈ 0; широкая на y=100 остаётся целой.
+    expect(ab.max[1]).toBeLessThan(30);
+    expect(ab.min[1]).toBeGreaterThan(-30);
+    expect(b.boundingBox().max[1]).toBeGreaterThan(120);
+  });
+
   it('окно мимо модели даёт понятную ошибку вместо пустого реза', async () => {
     await boot();
     const { manifold } = build(boxSoup(20, 20, 20));
