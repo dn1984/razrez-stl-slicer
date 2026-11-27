@@ -19,7 +19,7 @@ import type {
   PreviewResponse,
   WorkerResponse,
 } from './worker/protocol.ts';
-import type { PartGeometry, CutStats, Vec2, Vec3 } from './geometry/types.ts';
+import type { PartGeometry, CutStats, CutPreview, Vec2, Vec3 } from './geometry/types.ts';
 import { basisFromNormal } from './geometry/math.ts';
 import GeometryWorker from './worker/geometry.worker.ts?worker&inline';
 import { downloadPart, savePartsToFolder, serializeProject, parseProject, downloadBlob, safeName } from './io/files.ts';
@@ -62,8 +62,58 @@ function updateAreaAxesHint(basis: { u: Vec3; v: Vec3 }) {
   text.textContent = `Оси окна: ширина вдоль ${axisName(basis.u)}, высота вдоль ${axisName(basis.v)}.`;
 }
 
-function setAreaCoverageWarning(covered: boolean) {
-  document.getElementById('cut-area-full')?.classList.toggle('hidden', !covered);
+/**
+ * Предупреждение о слишком большом окне.
+ *
+ * Плоскость бесконечна: «резать только крыло» она не умеет. Ограничивает рез
+ * именно окно, и если оно накрывает почти всё сечение (крыло + фюзеляж), то
+ * фюзеляж тоже разрежется. Это главный источник путаницы, поэтому говорим
+ * прямо и с числом.
+ */
+function setAreaCoverageWarning(covered: boolean, fraction = 0) {
+  const host = document.getElementById('cut-area-full');
+  if (!host) return;
+  const text = host.querySelector('span:last-child');
+  const big = covered || fraction >= 0.7;
+  host.classList.toggle('hidden', !big);
+  if (!big || !text) return;
+  text.textContent = covered
+    ? 'Окно охватывает всё сечение по выбранной оси — рез пройдёт по всей детали. Уменьшите ширину или высоту.'
+    : `В окно попадает ${Math.round(fraction * 100)}% сечения: кроме нужного участка рез задевает и остальное (например фюзеляж). Уменьшите окно и сдвиньте его на нужный участок.`;
+}
+
+/**
+ * Показывает, что именно попало в окно реза: долю сечения и мировые границы.
+ * Без этого непонятно, почему «плоскость через крыло» отрезает ещё и фюзеляж:
+ * окно шириной 100 мм просто накрывает и крыло, и фюзеляж.
+ */
+function setAreaBounds(info: CutPreview['area'], hostId = 'cut-area-bounds') {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  const text = host.querySelector('span:last-child');
+  if (!text) return;
+  if (!info) {
+    host.classList.add('hidden');
+    return;
+  }
+  host.classList.remove('hidden');
+  const axisName = (vec?: Vec3): string => {
+    if (!vec) return '?';
+    const axes: Array<[string, number]> = [
+      ['X', vec[0]],
+      ['Y', vec[1]],
+      ['Z', vec[2]],
+    ];
+    const [name, value] = axes.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
+    return value >= 0 ? `+${name}` : `−${name}`;
+  };
+  const part = `${Math.round((info.fraction ?? 0) * 100)}% сечения`;
+  const bounds =
+    info.uMin !== undefined
+      ? `; вдоль ${axisName(info.uAxis)} от ${fmt(info.uMin ?? 0, 0)} до ${fmt(info.uMax ?? 0, 0)} мм,` +
+        ` вдоль ${axisName(info.vAxis)} от ${fmt(info.vMin ?? 0, 0)} до ${fmt(info.vMax ?? 0, 0)} мм`
+      : '';
+  text.textContent = `В окно попадает ${part}${bounds}.`;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -733,7 +783,12 @@ async function runPreview() {
     if (token !== previewToken) return;
     viewer.setPreview(response.preview, state.pinDiameter / 2);
     viewer.setPreview2(response.extraPreview, state.extraEnabled && state.extraVisible);
-    setAreaCoverageWarning(Boolean(response.preview?.area?.coversSection));
+    setAreaCoverageWarning(
+      Boolean(response.preview?.area?.coversSection),
+      response.preview?.area?.fraction ?? 0,
+    );
+    setAreaBounds(response.preview?.area ?? null);
+    setAreaBounds(response.extraPreview?.area ?? null, 'extra-area-bounds');
     if (response.preview && !response.preview.ok) {
       planeWarningShown = true;
       setStatus('warn', 'Плоскость вне модели', 'Сдвиньте плоскость ближе к центру детали.');

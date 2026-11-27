@@ -134,7 +134,24 @@ export interface CutPreview {
   /** Расстояния от модели до плоскости по нормали: отрицательное — за плоскостью. */
   planeDistance: { min: number; max: number };
   /** Окно ограниченной области реза в мировых координатах (если включено). */
-  area: { width: number; height: number; center: Vec3; coversSection?: boolean } | null;
+  area:
+    | {
+        width: number;
+        height: number;
+        center: Vec3;
+        coversSection?: boolean;
+        /** Доля площади сечения, попавшая в окно (0..1). */
+        fraction?: number;
+        /** Оси окна в мировых координатах. */
+        uAxis?: Vec3;
+        vAxis?: Vec3;
+        /** Границы окна в мировых координатах вдоль этих осей, мм. */
+        uMin?: number;
+        uMax?: number;
+        vMin?: number;
+        vMax?: number;
+      }
+    | null;
   ok: boolean;
   error?: string;
 }

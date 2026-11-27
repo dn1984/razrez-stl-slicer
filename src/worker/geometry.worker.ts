@@ -237,6 +237,7 @@ function computePreview(m: Manifold, cut: CutSettings): CutPreview {
   // Ограниченная область: показываем контур только внутри окна реза, иначе
   // предпросмотр обещает разрез там, где деталь останется целой.
   let shown = polygons;
+  let fraction: number | undefined;
   const area = cut.area;
   if (area?.enabled) {
     const w = Math.max(0.5, area.width);
@@ -258,8 +259,13 @@ function computePreview(m: Manifold, cut: CutSettings): CutPreview {
       const clipped = region.intersect(window);
       if (!clipped.isEmpty() && clipped.numContour() > 0) {
         shown = clipped.toPolygons() as [number, number][][];
+        // Доля сечения внутри окна: сразу видно, режется «только крыло» или
+        // окно накрывает всю деталь вместе с фюзеляжем.
+        const total = cs.area();
+        fraction = total > 1e-9 ? Math.min(1, clipped.area() / total) : 0;
       } else {
         shown = [];
+        fraction = 0;
       }
     } catch {
       shown = polygons;
@@ -269,11 +275,28 @@ function computePreview(m: Manifold, cut: CutSettings): CutPreview {
       cx + w / 2 >= b.max[0] - 1e-6 &&
       cy - h / 2 <= b.min[1] + 1e-6 &&
       cy + h / 2 >= b.max[1] - 1e-6;
+    // Мировые координаты границ окна — чтобы их можно было сверить с моделью.
+    const cornerMin = toWorldPoint(cx - w / 2, cy - h / 2, 0);
+    const cornerMax = toWorldPoint(cx + w / 2, cy + h / 2, 0);
+    const axisOf = (vec: Vec3): number => {
+      if (Math.abs(Math.abs(vec[0]) - 1) < 0.02) return 0;
+      if (Math.abs(Math.abs(vec[1]) - 1) < 0.02) return 1;
+      return 2;
+    };
+    const ai = axisOf(basis.u);
+    const aj = axisOf(basis.v);
     result.area = {
       width: w,
       height: h,
       center: toWorldPoint(cx, cy, 0),
       coversSection,
+      fraction,
+      uAxis: basis.u,
+      vAxis: basis.v,
+      uMin: Math.min(cornerMin[ai], cornerMax[ai]),
+      uMax: Math.max(cornerMin[ai], cornerMax[ai]),
+      vMin: Math.min(cornerMin[aj], cornerMax[aj]),
+      vMax: Math.max(cornerMin[aj], cornerMax[aj]),
     };
   }
 
