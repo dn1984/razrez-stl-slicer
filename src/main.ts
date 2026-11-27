@@ -888,25 +888,84 @@ async function runCut() {
 
 /* --------------------------------------------------------------- отрисовка */
 
+/** Части, отмеченные галочками для склейки. */
+const mergePicks = new Set<string>();
+
+function updateMergeButton() {
+  const button = document.getElementById('merge-parts') as HTMLButtonElement | null;
+  if (button) button.disabled = mergePicks.size < 2;
+}
+
+async function mergeSelectedParts() {
+  if (mergePicks.size < 2 || busy) return;
+  const indices = lastParts
+    .map((p, i) => (mergePicks.has(p.id) ? i : -1))
+    .filter((i) => i >= 0);
+  if (indices.length < 2) return;
+  busy = true;
+  setStatus('busy', 'Склеиваю', 'Объединяю отмеченные части…');
+  try {
+    const response = await ask<ResultResponse>({ type: 'merge', indices });
+    if (!response.ok) {
+      setStatus('bad', 'Не получилось склеить', response.error ?? '');
+      return;
+    }
+    lastParts = response.parts;
+    viewer.clearParts();
+    viewer.setSourceGeometryHidden(true);
+    for (const part of response.parts) viewer.addPart(part);
+    renderParts(response.parts);
+    // Проверки относились к резу, после склейки они уже не про этот набор
+    // частей — не показываем устаревшие числа.
+    renderChecks(null);
+    renderWarnings([]);
+    ($('#save-parts') as HTMLButtonElement).disabled = false;
+    ($('#save-parts-loose') as HTMLButtonElement).disabled = false;
+    setStatus('ok', 'Части склеены', `Теперь частей: ${response.parts.length}`);
+    const totalTris = response.parts.reduce((s, p) => s + p.triangles, 0);
+    $('#status-tris').textContent = `${fmtInt(totalTris)} тр.`;
+    $('#status-parts').textContent = `${response.parts.length} частей`;
+  } catch (err) {
+    setStatus('bad', 'Ошибка склейки', String((err as Error)?.message ?? err));
+  } finally {
+    busy = false;
+  }
+}
+
 function renderParts(parts: PartGeometry[]) {
   const host = $('#parts-list');
   const badge = document.querySelector<HTMLElement>('[data-badge-parts]');
+  const mergePanel = document.getElementById('merge-panel');
   if (parts.length === 0) {
     host.innerHTML = '<div class="empty">Разрежьте модель,<br />и части появятся здесь.</div>';
     if (badge) badge.textContent = '—';
+    if (mergePanel) mergePanel.hidden = true;
     return;
   }
   if (badge) badge.textContent = `${parts.length}`;
+  if (mergePanel) mergePanel.hidden = parts.length < 2;
+  mergePicks.clear();
   host.innerHTML = parts
     .map(
       (p) => `
       <div class="part-row" data-part="${p.id}" data-selected="false" role="button" tabindex="0">
+        <input class="part-row__pick" type="checkbox" data-pick="${p.id}" title="Отметить для склейки" />
         <span class="part-row__swatch" style="background:${p.side === 'A' ? '#9bb8d9' : '#d9b98f'}"></span>
         <span class="part-row__name">${escapeHtml(p.label)}</span>
         <span class="part-row__meta">${fmt(p.volume / 1000, 1)} см³</span>
       </div>`,
     )
     .join('');
+
+  for (const box of $$('#parts-list [data-pick]') as HTMLInputElement[]) {
+    box.addEventListener('click', (e) => e.stopPropagation());
+    box.addEventListener('change', () => {
+      const id = box.dataset.pick!;
+      if (box.checked) mergePicks.add(id);
+      else mergePicks.delete(id);
+      updateMergeButton();
+    });
+  }
 
   for (const row of $$('#parts-list .part-row')) {
     const id = row.dataset.part!;
@@ -1057,6 +1116,8 @@ $('#save-parts').addEventListener('click', async () => {
     showModal('Сохранение не удалось', message);
   }
 });
+
+$('#merge-parts').addEventListener('click', () => void mergeSelectedParts());
 
 $('#save-parts-loose').addEventListener('click', () => {
   if (lastParts.length === 0) return;

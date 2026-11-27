@@ -643,12 +643,19 @@ select:focus {
   border-radius:var(--radius);
   cursor:pointer;
   background:#f7f4ec;
-  grid-template-columns:auto 1fr auto;
+  grid-template-columns:auto auto 1fr auto;
   align-items:center;
   gap:9px;
   padding:7px 8px;
   transition:border-color .12s,background .12s;
   display:grid}
+
+.part-row__pick {
+  width:14px;
+  height:14px;
+  accent-color:var(--accent);
+  cursor:pointer;
+  margin:0}
 
 .part-row:hover {
   border-color:var(--ink-soft)}

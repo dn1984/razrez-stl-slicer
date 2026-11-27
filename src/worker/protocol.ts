@@ -28,7 +28,14 @@ export interface ResetRequest {
   id: number;
 }
 
-export type WorkerRequest = LoadRequest | ComputeRequest | PreviewRequest | ResetRequest;
+/** Склеить выбранные части последнего реза обратно в одну. */
+export interface MergeRequest {
+  type: 'merge';
+  id: number;
+  indices: number[];
+}
+
+export type WorkerRequest = LoadRequest | ComputeRequest | PreviewRequest | ResetRequest | MergeRequest;
 
 export interface LoadedResponse {
   type: 'loaded';

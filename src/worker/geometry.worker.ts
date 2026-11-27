@@ -36,6 +36,9 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       case 'preview':
         handlePreview(msg);
         break;
+      case 'merge':
+        handleMerge(msg);
+        break;
       case 'reset':
         source?.delete();
         source = null;
@@ -137,8 +140,10 @@ function handleCompute(msg: Extract<WorkerRequest, { type: 'compute' }>) {
   for (const p of parts) {
     transfer.push(p.positions.buffer, p.indices.buffer);
   }
-  // Результат реза больше не нужен — освобождаем WASM-память.
-  for (const p of out.parts) p.manifold.delete();
+  // Держим тела последнего реза: они нужны, чтобы склеивать части обратно.
+  releaseLastParts();
+  lastParts = out.parts.map((p) => p.manifold);
+  lastPartsSides = out.parts.map((p) => p.side);
 
   post(
     {
@@ -153,6 +158,107 @@ function handleCompute(msg: Extract<WorkerRequest, { type: 'compute' }>) {
     },
     transfer,
   );
+}
+
+/** Тела последнего реза (для объединения частей обратно). */
+let lastParts: Manifold[] = [];
+let lastPartsSides: Array<'A' | 'B'> = [];
+
+function releaseLastParts() {
+  for (const m of lastParts) m.delete();
+  lastParts = [];
+  lastPartsSides = [];
+}
+
+/**
+ * Склеивает выбранные части обратно в одну.
+ *
+ * Это ответ на «плоскость всегда режет дальше, чем нужно»: режем плоскостью
+ * насквозь (стенок окна нет вообще), а потом сшиваем обратно те куски, которые
+ * должны остаться одним телом. Стык совпадает точь-в-точь, поэтому шов
+ * исчезает, а нужная граница остаётся плоской.
+ */
+function handleMerge(msg: Extract<WorkerRequest, { type: 'merge' }>) {
+  if (!source || lastParts.length === 0) {
+    post({ type: 'result', id: msg.id, ok: false, error: 'Сначала разрежьте модель.', parts: [], stats: [], previews: [], ms: 0, sourceVolume: 0 });
+    return;
+  }
+  const started = performance.now();
+  const picked = msg.indices.filter((i) => i >= 0 && i < lastParts.length);
+  if (picked.length < 2) {
+    post({
+      type: 'result',
+      id: msg.id,
+      ok: false,
+      error: 'Выберите хотя бы две части, чтобы склеить их.',
+      parts: [],
+      stats: [],
+      previews: [],
+      ms: 0,
+      sourceVolume: safeVolume(source),
+    });
+    return;
+  }
+
+  // Объединяем по порядку; при неудаче оставляем что получилось.
+  const set = new Set(picked);
+  let merged: Manifold | null = null;
+  for (const i of picked) {
+    merged = merged ? merged.add(lastParts[i]) : lastParts[i];
+    if (!merged || merged.status() !== 'NoError' || merged.isEmpty()) {
+      merged?.delete();
+      merged = null;
+      break;
+    }
+  }
+  if (!merged) {
+    post({ type: 'result', id: msg.id, ok: false, error: 'Не удалось склеить части: ядро вернуло ошибку.', parts: [], stats: [], previews: [], ms: 0, sourceVolume: safeVolume(source) });
+    return;
+  }
+
+  const nextParts: Manifold[] = [];
+  const nextSides: Array<'A' | 'B'> = [];
+  let inserted = false;
+  for (let i = 0; i < lastParts.length; i++) {
+    if (set.has(i)) {
+      if (!inserted) {
+        nextParts.push(merged);
+        nextSides.push(lastPartsSides[i] ?? 'A');
+        inserted = true;
+      }
+    } else {
+      nextParts.push(lastParts[i]);
+      nextSides.push(lastPartsSides[i] ?? 'A');
+    }
+  }
+  // Старые тела, не попавшие в новый список, освобождаем.
+  for (let i = 0; i < lastParts.length; i++) {
+    if (!nextParts.includes(lastParts[i])) lastParts[i].delete();
+  }
+  lastParts = nextParts;
+  lastPartsSides = nextSides;
+
+  const parts: ReturnType<typeof manifoldToPart>[] = [];
+  let a = 0;
+  let b = 0;
+  for (let i = 0; i < lastParts.length; i++) {
+    const side = lastPartsSides[i];
+    const idx = side === 'A' ? ++a : ++b;
+    parts.push(manifoldToPart(lastParts[i], `${side}${idx}`, `${sourceName} ${side}${idx}`, side));
+  }
+  const transfer: Transferable[] = [];
+  for (const p of parts) transfer.push(p.positions.buffer, p.indices.buffer);
+
+  post({
+    type: 'result',
+    id: msg.id,
+    ok: true,
+    parts,
+    stats: [],
+    previews: [],
+    ms: performance.now() - started,
+    sourceVolume: safeVolume(source),
+  }, transfer);
 }
 
 /**
