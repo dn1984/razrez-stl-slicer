@@ -53,6 +53,29 @@ function axisName(v: Vec3): string {
   return value > 0 ? `+${name}` : `−${name}`;
 }
 
+/**
+ * Подписывает оси габаритом модели: «X · 311».
+ *
+ * Без этого легко перепутать оси — например у самолёта X может быть размахом
+ * (311 мм), а вовсе не длиной, и рез «по X» проходит через оба крыла сразу.
+ */
+function updateAxisLabels() {
+  const size = sizeOf(state);
+  const names: Array<[string, number]> = [
+    ['x', size[0]],
+    ['y', size[1]],
+    ['z', size[2]],
+  ];
+  for (const [axis, length] of names) {
+    for (const button of $$(`[data-axis="${axis}"], [data-extra-axis="${axis}"]`)) {
+      const letter = axis.toUpperCase();
+      button.innerHTML = state.model
+        ? `${letter}<span class="segmented__size">${fmt(length, 0)}</span>`
+        : letter;
+    }
+  }
+}
+
 /** Подсказка, вдоль каких осей мира двигаются ползунки окна реза. */
 function updateAreaAxesHint(basis: { u: Vec3; v: Vec3 }) {
   const host = document.getElementById('cut-area-axes');
@@ -303,6 +326,7 @@ async function openFile(file: File) {
     });
 
     renderModelInfo(state.model);
+    updateAxisLabels();
     setControlsEnabled(true);
     syncRangeLimits();
     setStatus('ok', 'Модель загружена', `${fmtInt(parsed.triangles)} треугольников, ${bytes(buffer.byteLength)}`);
@@ -1207,6 +1231,7 @@ function syncInputsFromState() {
   const extraAngle = $('#extra-angle') as HTMLInputElement | null;
   if (extraAngle) extraAngle.disabled = state.extraParallel;
   updateProfileUi();
+  updateAxisLabels();
   syncRangeLimits();
   updateExtraInfo();
   updatePlaneVisual();

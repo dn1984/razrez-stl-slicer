@@ -863,3 +863,11 @@ select:focus {
 }
 
 /*$vite$:1*/
+
+.segmented__size {
+  display:inline-block;
+  margin-left:5px;
+  font-family:var(--mono);
+  font-size:10px;
+  opacity:.62;
+  font-variant-numeric:tabular-nums}
