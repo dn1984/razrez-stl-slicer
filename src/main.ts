@@ -716,9 +716,19 @@ function updatePlaneVisual() {
       cut.plane.point[2] + basis.u[2] * state.cutOffsetU + basis.v[2] * state.cutOffsetV,
     ];
     viewer.setPlaneRect(point, cut.plane.normal, state.cutWidth, state.cutHeight, state.planeVisible && !busy);
+    // Объёмная рамка: призма сквозь деталь — сразу видно, что попадает в рез.
+    viewer.setWindowBox(
+      point,
+      cut.plane.normal,
+      state.cutWidth,
+      state.cutHeight,
+      diag * 1.2,
+      state.planeVisible && !busy,
+    );
   } else {
     viewer.setPlaneSize(Math.max(diag * 1.25, 10));
     viewer.setPlane(cut.plane.point, cut.plane.normal, state.planeVisible && !busy);
+    viewer.setWindowBox(cut.plane.point, cut.plane.normal, 1, 1, 1, false);
   }
 
   // Вторая плоскость: своё окно, если у неё включена ограниченная область.
@@ -736,11 +746,22 @@ function updatePlaneVisual() {
         width: state.extraWidth,
         height: state.extraHeight,
       });
+      viewer.setWindowBox(
+        p2,
+        second.plane.normal,
+        state.extraWidth,
+        state.extraHeight,
+        diag * 1.2,
+        visible,
+        true,
+      );
     } else {
       viewer.setPlane2(second.plane.point, second.plane.normal, visible);
+      viewer.setWindowBox(second.plane.point, second.plane.normal, 1, 1, 1, false, true);
     }
   } else {
     viewer.setPlane2([0, 0, 0], [0, 0, 1], false);
+    viewer.setWindowBox([0, 0, 0], [0, 0, 1], 1, 1, 1, false, true);
   }
   viewer.setOverlayVisible(true);
   viewer.setSectionVisible(state.planeVisible, state.extraEnabled && state.extraVisible);

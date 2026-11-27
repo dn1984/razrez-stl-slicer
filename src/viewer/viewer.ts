@@ -45,6 +45,11 @@ export class Viewer {
   private readonly planeEdge2: THREE.Line;
   private readonly sectionLines: THREE.LineSegments;
   private readonly sectionLines2: THREE.LineSegments;
+  /** Объёмная рамка окна реза: видно, какой кусок детали попадёт под рез. */
+  private readonly windowBox: THREE.Mesh;
+  private readonly windowEdges: THREE.LineSegments;
+  private readonly windowBox2: THREE.Mesh;
+  private readonly windowEdges2: THREE.LineSegments;
   private readonly pinMarkers: THREE.InstancedMesh;
   private readonly profileArc: THREE.Line;
 
@@ -178,6 +183,59 @@ export class Viewer {
     );
     this.sectionLines2.renderOrder = 4;
     this.overlay.add(this.sectionLines2);
+
+    // Объёмная рамка окна: призма, вытянутая вдоль нормали. По ней сразу
+    // видно, что попадает в рез, а что остаётся за его пределами.
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    this.windowBox = new THREE.Mesh(
+      boxGeo,
+      new THREE.MeshBasicMaterial({
+        color: COLORS.section,
+        transparent: true,
+        opacity: 0.055,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    this.windowBox.renderOrder = 2;
+    this.windowBox.visible = false;
+    this.overlay.add(this.windowBox);
+    this.windowEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(boxGeo),
+      new THREE.LineBasicMaterial({ color: COLORS.section, transparent: true, opacity: 0.55, depthTest: false }),
+    );
+    this.windowEdges.renderOrder = 4;
+    this.windowEdges.visible = false;
+    this.overlay.add(this.windowEdges);
+
+    this.windowBox2 = new THREE.Mesh(
+      boxGeo,
+      new THREE.MeshBasicMaterial({
+        color: COLORS.plane2,
+        transparent: true,
+        opacity: 0.045,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    this.windowBox2.renderOrder = 2;
+    this.windowBox2.visible = false;
+    this.overlay.add(this.windowBox2);
+    this.windowEdges2 = new THREE.LineSegments(
+      new THREE.EdgesGeometry(boxGeo),
+      new THREE.LineDashedMaterial({
+        color: COLORS.plane2,
+        dashSize: 3,
+        gapSize: 2,
+        transparent: true,
+        opacity: 0.75,
+        depthTest: false,
+      }),
+    );
+    this.windowEdges2.renderOrder = 4;
+    this.windowEdges2.visible = false;
+    this.windowEdges2.computeLineDistances();
+    this.overlay.add(this.windowEdges2);
 
     this.pinMarkers = new THREE.InstancedMesh(
       new THREE.SphereGeometry(1, 16, 12),
@@ -486,6 +544,41 @@ export class Viewer {
     // Рамки плоскостей управляются своим видимостью, слой всегда в сцене.
     this.overlay.visible = true;
     this.planeEdge.visible = visible;
+  }
+
+  /**
+   * Объёмная рамка окна реза: призма вдоль нормали плоскости.
+   * second — рамка второго реза (другой цвет и пунктир).
+   */
+  setWindowBox(
+    point: Vec3,
+    normal: Vec3,
+    width: number,
+    height: number,
+    depth: number,
+    visible: boolean,
+    second = false,
+  ) {
+    const mesh = second ? this.windowBox2 : this.windowBox;
+    const edges = second ? this.windowEdges2 : this.windowEdges;
+    if (!visible) {
+      mesh.visible = false;
+      edges.visible = false;
+      return;
+    }
+    const q = this.planeQuaternion(normal);
+    const scale = new THREE.Vector3(
+      Math.max(0.5, width),
+      Math.max(0.5, height),
+      Math.max(0.5, depth),
+    );
+    for (const obj of [mesh, edges]) {
+      obj.position.set(point[0], point[1], point[2]);
+      obj.quaternion.copy(q);
+      obj.scale.copy(scale);
+      obj.visible = true;
+    }
+    edges.computeLineDistances();
   }
 
   /** Показывать контур первого и второго реза отдельно. */
