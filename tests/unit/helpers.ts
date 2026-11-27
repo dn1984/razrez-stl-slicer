@@ -16,6 +16,7 @@ export function makeCut(overrides: Partial<CutSettings> = {}): CutSettings {
     id: 'cut-1',
     name: 'Рез 1',
     plane: { point: [0, 0, 0], normal: [0, 0, 1] },
+    area: { enabled: false, width: 100, height: 100, offsetU: 0, offsetV: 0 },
     profile: defaultProfile(),
     step: { enabled: false, width: 4, height: 1.2 },
     pins: { enabled: false, diameter: 4, depth: 6, clearance: 0.2, taper: 0.85, maxCount: 4, manual: [] },

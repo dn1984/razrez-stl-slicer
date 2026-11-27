@@ -1,7 +1,7 @@
 // Воркер геометрии: всё тяжёлое считается здесь, главный поток только рисует.
 
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { initManifold, manifoldFromPositions, manifoldToPart, safeVolume } from '../geometry/manifold.ts';
+import { initManifold, manifoldFromPositions, manifoldToPart, safeVolume, getAPI } from '../geometry/manifold.ts';
 import type { Manifold } from '../geometry/manifold.ts';
 import { runCuts } from '../geometry/cut.ts';
 import { buildProfile } from '../geometry/profile.ts';
@@ -197,6 +197,7 @@ function computePreview(m: Manifold, cut: CutSettings): CutPreview {
     profileRadius: 0,
     profilePeak: 0,
     planeDistance: { min: minS, max: maxS },
+    area: null,
     ok: false,
   };
   if (!(minS < 0 && maxS > 0)) {
@@ -229,7 +230,43 @@ function computePreview(m: Manifold, cut: CutSettings): CutPreview {
     return [p[0], p[1], p[2]];
   };
   result.profileCenter = toWorldPoint(center[0], center[1], 0);
-  result.section = polygons.map((poly) =>
+
+  // Ограниченная область: показываем контур только внутри окна реза, иначе
+  // предпросмотр обещает разрез там, где деталь останется целой.
+  let shown = polygons;
+  const area = cut.area;
+  if (area?.enabled) {
+    const w = Math.max(0.5, area.width);
+    const h = Math.max(0.5, area.height);
+    const cx = center[0] + (area.offsetU ?? 0);
+    const cy = center[1] + (area.offsetV ?? 0);
+    const rect: [number, number][] = [
+      [cx - w / 2, cy - h / 2],
+      [cx + w / 2, cy - h / 2],
+      [cx + w / 2, cy + h / 2],
+      [cx - w / 2, cy + h / 2],
+    ];
+    try {
+      const { CrossSection } = getAPI();
+      const region = new CrossSection(polygons, 'NonZero');
+      const window = new CrossSection([rect], 'NonZero');
+      const clipped = region.intersect(window);
+      if (!clipped.isEmpty() && clipped.numContour() > 0) {
+        shown = clipped.toPolygons() as [number, number][][];
+      } else {
+        shown = [];
+      }
+    } catch {
+      shown = polygons;
+    }
+    result.area = {
+      width: w,
+      height: h,
+      center: toWorldPoint(cx, cy, 0),
+    };
+  }
+
+  result.section = shown.map((poly) =>
     poly.map(([u, v]) => toWorldPoint(u, v, profile.height(Math.hypot(u - center[0], v - center[1])))),
   );
   result.ok = true;

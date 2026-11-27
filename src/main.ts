@@ -19,7 +19,8 @@ import type {
   PreviewResponse,
   WorkerResponse,
 } from './worker/protocol.ts';
-import type { PartGeometry, CutStats, Vec2 } from './geometry/types.ts';
+import type { PartGeometry, CutStats, Vec2, Vec3 } from './geometry/types.ts';
+import { basisFromNormal } from './geometry/math.ts';
 import GeometryWorker from './worker/geometry.worker.ts?worker&inline';
 import { downloadPart, savePartsToFolder, serializeProject, parseProject, downloadBlob, safeName } from './io/files.ts';
 
@@ -35,6 +36,31 @@ let lastStats: CutStats[] = [];
 let busy = false;
 
 /* ------------------------------------------------------------------ утилиты */
+
+/** Человеческое имя оси мира для подсказок: u = (−1,0,0) → «−X». */
+function axisName(v: Vec3): string {
+  const axes: Array<[string, number]> = [
+    ['X', v[0]],
+    ['Y', v[1]],
+    ['Z', v[2]],
+  ];
+  for (const [name, value] of axes) {
+    if (Math.abs(Math.abs(value) - 1) < 0.02) return value > 0 ? `+${name}` : `−${name}`;
+  }
+  // Наклонная плоскость: показываем доминирующую ось со знаком.
+  const sorted = [...axes].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const [name, value] = sorted[0];
+  return value > 0 ? `+${name}` : `−${name}`;
+}
+
+/** Подсказка, вдоль каких осей мира двигаются ползунки окна реза. */
+function updateAreaAxesHint(basis: { u: Vec3; v: Vec3 }) {
+  const host = document.getElementById('cut-area-axes');
+  if (!host) return;
+  const text = host.querySelector('span:last-child');
+  if (!text) return;
+  text.textContent = `Оси окна: ширина вдоль ${axisName(basis.u)}, высота вдоль ${axisName(basis.v)}.`;
+}
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T;
 const $$ = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)];
@@ -353,6 +379,27 @@ bindRange('plane-angle', 'planeAngle', (v) => {
   return `${fmt(v, 0)}°`;
 });
 bindSwitch('plane-visible', 'planeVisible', () => updatePlaneVisual());
+bindSwitch('cut-area-enabled', 'cutAreaEnabled', () => {
+  toggleGroup('cut-area', state.cutAreaEnabled);
+  updatePlaneVisual();
+  schedulePreview(0);
+});
+bindRange('cut-width', 'cutWidth', (v) => {
+  updatePlaneVisual();
+  return `${fmt(v, 0)} мм`;
+});
+bindRange('cut-height', 'cutHeight', (v) => {
+  updatePlaneVisual();
+  return `${fmt(v, 0)} мм`;
+});
+bindRange('cut-offset-u', 'cutOffsetU', (v) => {
+  updatePlaneVisual();
+  return `${fmt(v, 1)} мм`;
+});
+bindRange('cut-offset-v', 'cutOffsetV', (v) => {
+  updatePlaneVisual();
+  return `${fmt(v, 1)} мм`;
+});
 
 // Профиль
 for (const button of $$('[data-profile]')) {
@@ -543,8 +590,20 @@ function updatePlaneVisual() {
   const cut = primaryCut(state);
   const size = sizeOf(state);
   const diag = Math.hypot(size[0], size[1], size[2]);
-  viewer.setPlaneSize(Math.max(diag * 1.25, 10));
-  viewer.setPlane(cut.plane.point, cut.plane.normal, state.planeVisible && !busy);
+  if (state.cutAreaEnabled) {
+    // Плоскость превращается в окно реза: видно и размер, и сдвиг.
+    const basis = basisFromNormal(cut.plane.normal);
+    updateAreaAxesHint(basis);
+    const point: Vec3 = [
+      cut.plane.point[0] + basis.u[0] * state.cutOffsetU + basis.v[0] * state.cutOffsetV,
+      cut.plane.point[1] + basis.u[1] * state.cutOffsetU + basis.v[1] * state.cutOffsetV,
+      cut.plane.point[2] + basis.u[2] * state.cutOffsetU + basis.v[2] * state.cutOffsetV,
+    ];
+    viewer.setPlaneRect(point, cut.plane.normal, state.cutWidth, state.cutHeight, state.planeVisible && !busy);
+  } else {
+    viewer.setPlaneSize(Math.max(diag * 1.25, 10));
+    viewer.setPlane(cut.plane.point, cut.plane.normal, state.planeVisible && !busy);
+  }
 
   // Вторая плоскость: видна только когда включён второй рез.
   if (state.extraEnabled) {
@@ -847,6 +906,10 @@ function syncInputsFromState() {
   for (const [id, key] of [
     ['plane-pos', 'planePos'],
     ['plane-angle', 'planeAngle'],
+    ['cut-width', 'cutWidth'],
+    ['cut-height', 'cutHeight'],
+    ['cut-offset-u', 'cutOffsetU'],
+    ['cut-offset-v', 'cutOffsetV'],
     ['profile-height', 'profileHeight'],
     ['step-width', 'stepWidth'],
     ['step-height', 'stepHeight'],
@@ -865,6 +928,7 @@ function syncInputsFromState() {
   }
   for (const [id, key] of [
     ['plane-visible', 'planeVisible'],
+    ['cut-area-enabled', 'cutAreaEnabled'],
     ['step-enabled', 'stepEnabled'],
     ['pins-enabled', 'pinsEnabled'],
     ['tongue-enabled', 'tongueEnabled'],
@@ -886,6 +950,7 @@ function syncInputsFromState() {
   toggleGroup('pins', state.pinsEnabled);
   toggleGroup('tongue', state.tongueEnabled);
   toggleGroup('extra', state.extraEnabled);
+  toggleGroup('cut-area', state.cutAreaEnabled);
   const extraAngle = $('#extra-angle') as HTMLInputElement | null;
   if (extraAngle) extraAngle.disabled = state.extraParallel;
   updateProfileUi();

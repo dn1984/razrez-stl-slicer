@@ -406,6 +406,23 @@ export class Viewer {
     this.planeEdge.visible = visible;
   }
 
+  /**
+   * Плоскость как окно ограниченного реза: размер задаётся шириной и высотой,
+   * поэтому видно, что именно будет отрезано, а что останется целым.
+   */
+  setPlaneRect(point: Vec3, normal: Vec3, width: number, height: number, visible: boolean) {
+    const n = new THREE.Vector3(normal[0], normal[1], normal[2]).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    this.planeMesh.scale.set(Math.max(0.5, width), Math.max(0.5, height), 1);
+    this.planeEdge.scale.copy(this.planeMesh.scale);
+    this.planeMesh.position.set(point[0], point[1], point[2]);
+    this.planeMesh.quaternion.copy(q);
+    this.planeMesh.visible = visible;
+    this.planeEdge.position.copy(this.planeMesh.position);
+    this.planeEdge.quaternion.copy(q);
+    this.planeEdge.visible = visible;
+  }
+
   /** Положение второй плоскости реза. */
   setPlane2(point: Vec3, normal: Vec3, visible: boolean) {
     const n = new THREE.Vector3(normal[0], normal[1], normal[2]).normalize();

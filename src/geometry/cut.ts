@@ -24,7 +24,7 @@ import {
   pointInPolygons,
   worldToLocalMatrix,
 } from './math.ts';
-import type { CutPreview, CutSettings, CutStats, PartGeometry, Vec2 } from './types.ts';
+import type { CutAreaSpec, CutPreview, CutSettings, CutStats, PartGeometry, Vec2 } from './types.ts';
 
 export interface CutInput {
   manifold: Manifold;
@@ -181,6 +181,50 @@ interface SplitPair {
   b: Manifold;
 }
 
+/** Прямоугольник ограниченной области реза в координатах сечения. */
+function areaRect(area: CutAreaSpec | undefined, center: Vec2): { min: Vec2; max: Vec2 } | null {
+  if (!area?.enabled) return null;
+  const w = Math.max(0.5, area.width);
+  const h = Math.max(0.5, area.height);
+  const cx = center[0] + (area.offsetU ?? 0);
+  const cy = center[1] + (area.offsetV ?? 0);
+  return { min: [cx - w / 2, cy - h / 2], max: [cx + w / 2, cy + h / 2] };
+}
+
+const rectPolygon = (r: { min: Vec2; max: Vec2 }): Vec2[] => [
+  [r.min[0], r.min[1]],
+  [r.max[0], r.min[1]],
+  [r.max[0], r.max[1]],
+  [r.min[0], r.max[1]],
+];
+
+/**
+ * Обрезает сечение прямоугольным окном. Возвращает обрезанные контуры и их
+ * площадь — по ним ставятся замки и рисуется контур среза, чтобы всё это
+ * оставалось внутри реально разрезаемой области.
+ */
+function clipSection(
+  section: SectionResult,
+  rect: { min: Vec2; max: Vec2 },
+): { polygons: Vec2[][]; area: number; bounds: { min: Vec2; max: Vec2 } } {
+  const { CrossSection } = getAPI();
+  try {
+    const region = new CrossSection(section.polygons, 'NonZero');
+    const window = new CrossSection([rectPolygon(rect)], 'NonZero');
+    const clipped = region.intersect(window);
+    if (clipped.isEmpty() || clipped.numContour() === 0) {
+      return { polygons: [], area: 0, bounds: rect };
+    }
+    return {
+      polygons: clipped.toPolygons() as Vec2[][],
+      area: clipped.area(),
+      bounds: rect,
+    };
+  } catch {
+    return { polygons: [], area: 0, bounds: rect };
+  }
+}
+
 function splitAndJoin(
   world: Manifold,
   cut: CutSettings,
@@ -222,9 +266,36 @@ function splitAndJoin(
     center: section.center,
   });
 
-  const split = local.split(cutters.cutterA);
+  // Ограниченная область: режем не всю плоскость, а прямоугольное окно в ней.
+  // Всё, что за окном, остаётся нетронутым и уходит в часть B целиком — именно
+  // это нужно, когда пилишь крыло, а плоскость задевает ещё и хвост.
+  const rect = areaRect(cut.area, section.center);
+  let cutterA = cutters.cutterA;
+  if (rect) {
+    const { Manifold } = getAPI();
+    const w = rect.max[0] - rect.min[0];
+    const h = rect.max[1] - rect.min[1];
+    const zFrom = -(diag + 12);
+    const zTo = diag + 12;
+    const windowPrism = Manifold.cube([w, h, zTo - zFrom], false).translate(rect.min[0], rect.min[1], zFrom);
+    const bounded = cutterA.intersect(windowPrism);
+    windowPrism.delete();
+    if (bounded.status() !== 'NoError' || bounded.isEmpty()) {
+      bounded.delete();
+      cutters.cutterA.delete();
+      cutters.cutterB.delete();
+      local.delete();
+      stats.error = 'Ограниченная область реза не задевает модель — увеличьте окно или сдвиньте его.';
+      return null;
+    }
+    cutters.cutterA.delete();
+    cutterA = bounded;
+    stats.sectionArea = clipSection(section, rect).area;
+  }
+
+  const split = local.split(cutterA);
   local.delete();
-  cutters.cutterA.delete();
+  cutterA.delete();
   cutters.cutterB.delete();
 
   let [aLocal, bLocal] = split;
@@ -250,8 +321,17 @@ function splitAndJoin(
   const warnings = stats.warnings;
   const clearance = cut.pins.clearance;
   const margin = cut.pins.diameter / 2 + clearance + 1.5;
-  const allowed = allowedRegion(section, margin);
-  const sectionInfo = toSectionInfo(section);
+  // Если рез ограничен окном, замки и замеры толщины делаем только внутри него:
+  // штифт, поставленный за окном, попал бы в неразрезанный материал и оставил
+  // бы дырку в глубине детали.
+  const jointSection: SectionResult = rect
+    ? (() => {
+        const clipped = clipSection(section, rect);
+        return { ...section, polygons: clipped.polygons, area: clipped.area, bounds: clipped.bounds };
+      })()
+    : section;
+  const allowed = allowedRegion(jointSection, margin);
+  const sectionInfo = toSectionInfo(jointSection);
 
   const applyPair = (male: Manifold, female: Manifold): boolean => {
     if (male.status() !== 'NoError' || female.status() !== 'NoError') {
@@ -421,7 +501,8 @@ function splitAndJoin(
   preview.profileCenter = localPointToWorld(basis, origin, [section.center[0], section.center[1], 0]);
   preview.profileRadius = profile.radius;
   preview.profilePeak = profile.peak;
-  preview.section = section.polygons.map((poly) =>
+  // Контур среза рисуем только там, где действительно режем.
+  preview.section = jointSection.polygons.map((poly) =>
     poly.map(([u, v]) =>
       localPointToWorld(basis, origin, [
         u,
@@ -430,6 +511,17 @@ function splitAndJoin(
       ]),
     ),
   );
+  preview.area = rect
+    ? {
+        width: rect.max[0] - rect.min[0],
+        height: rect.max[1] - rect.min[1],
+        center: localPointToWorld(basis, origin, [
+          (rect.min[0] + rect.max[0]) / 2,
+          (rect.min[1] + rect.max[1]) / 2,
+          0,
+        ]),
+      }
+    : null;
 
   return { a: aWorld, b: bWorld };
 }
@@ -472,6 +564,7 @@ export function runCuts(input: CutInput): CutOutput {
       profileRadius: 0,
       profilePeak: 0,
       planeDistance: { min: -1, max: 1 },
+      area: null,
       ok: false,
     };
     const started = performance.now();

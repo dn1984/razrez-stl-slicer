@@ -53,10 +53,22 @@ export interface TongueSpec {
   lengthScale: number;
 }
 
+export interface CutAreaSpec {
+  /** Ограничить область действия реза прямоугольным окном в плоскости. */
+  enabled: boolean;
+  /** Размер окна по осям u и v плоскости, мм. */
+  width: number;
+  height: number;
+  /** Сдвиг окна от центра сечения, мм. */
+  offsetU: number;
+  offsetV: number;
+}
+
 export interface CutSettings {
   id: string;
   name: string;
   plane: PlaneSpec;
+  area?: CutAreaSpec;
   profile: ProfileSpec;
   step: StepSpec;
   pins: PinSpec;
@@ -119,6 +131,8 @@ export interface CutPreview {
   profilePeak: number;
   /** Расстояния от модели до плоскости по нормали: отрицательное — за плоскостью. */
   planeDistance: { min: number; max: number };
+  /** Окно ограниченной области реза в мировых координатах (если включено). */
+  area: { width: number; height: number; center: Vec3 } | null;
   ok: boolean;
   error?: string;
 }

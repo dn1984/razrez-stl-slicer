@@ -25,6 +25,12 @@ export interface AppState {
   /** Наклон плоскости, градусы. */
   planeAngle: number;
   planeVisible: boolean;
+  /** Ограниченная область второго измерения плоскости реза. */
+  cutAreaEnabled: boolean;
+  cutWidth: number;
+  cutHeight: number;
+  cutOffsetU: number;
+  cutOffsetV: number;
 
   profileShape: 'flat' | 'dome' | 'dish';
   profileHeight: number;
@@ -66,6 +72,11 @@ export function initialState(): AppState {
     planePos: 0,
     planeAngle: 0,
     planeVisible: true,
+    cutAreaEnabled: false,
+    cutWidth: 100,
+    cutHeight: 100,
+    cutOffsetU: 0,
+    cutOffsetV: 0,
     profileShape: 'flat',
     profileHeight: 3,
     falloff: 'smooth',
@@ -183,6 +194,13 @@ export function primaryCut(state: AppState): CutSettings {
     id: 'cut-1',
     name: 'Рез 1',
     plane: resolvePlane(state),
+    area: {
+      enabled: state.cutAreaEnabled,
+      width: state.cutWidth,
+      height: state.cutHeight,
+      offsetU: state.cutOffsetU,
+      offsetV: state.cutOffsetV,
+    },
     profile: {
       shape: state.profileShape,
       height: state.profileShape === 'flat' ? 0 : state.profileHeight,

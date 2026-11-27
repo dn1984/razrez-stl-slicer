@@ -278,6 +278,79 @@ describe('несколько резов и цилиндрические дета
   });
 });
 
+describe('ограниченная область реза', () => {
+  it('окно меньше детали: режется только окно, остальное остаётся целым', async () => {
+    await boot();
+    // «Крыло»: брусок 100×20×10. Плоскость по X делит его на две части,
+    // но окно 20×20 закрывает только середину — концы должны остаться целыми
+    // и уйти в одну часть.
+    const { manifold } = build(boxSoup(100, 20, 10));
+    const source = manifold.volume();
+    const out = runCuts({
+      manifold,
+      cuts: [
+        makeCut({
+          area: { enabled: true, width: 20, height: 20, offsetU: 0, offsetV: 0 },
+        }),
+      ],
+    });
+    expect(out.stats[0].ok).toBe(true);
+    expect(out.parts).toHaveLength(2);
+
+    const a = out.parts.find((p) => p.side === 'A')!.manifold;
+    const b = out.parts.find((p) => p.side === 'B')!.manifold;
+    // Часть A — только кусок внутри окна: 20 (u) × 20 (v) сверху половины.
+    const abox = a.boundingBox();
+    expect(abox.max[2] - abox.min[2]).toBeLessThan(6);
+    // Окно 20 мм по u — часть A не должна быть шире окна.
+    expect(abox.max[0] - abox.min[0]).toBeLessThan(21);
+    // Часть B забирает всё остальное, включая нетронутые концы.
+    expect(b.volume()).toBeGreaterThanOrEqual(source * 0.85);
+    const bbox = b.boundingBox();
+    expect(bbox.max[0] - bbox.min[0]).toBeGreaterThan(90);
+
+    // Сумма совпадает с исходником: материал не потерян и не удвоен.
+    const sum = a.volume() + b.volume();
+    expect(Math.abs(sum - source) / source).toBeLessThan(1e-6);
+    expect(out.stats[0].intersectionVolume).toBeLessThan(0.5);
+  });
+
+  it('окно мимо модели даёт понятную ошибку вместо пустого реза', async () => {
+    await boot();
+    const { manifold } = build(boxSoup(20, 20, 20));
+    const out = runCuts({
+      manifold,
+      cuts: [
+        makeCut({
+          area: { enabled: true, width: 5, height: 5, offsetU: 500, offsetV: 500 },
+        }),
+      ],
+    });
+    expect(out.stats[0].ok).toBe(false);
+    expect(out.stats[0].error).toMatch(/область/i);
+    expect(out.parts).toHaveLength(1);
+  });
+
+  it('сдвиг окна смещает область реза', async () => {
+    await boot();
+    const { manifold } = build(boxSoup(60, 60, 20));
+    const centered = runCuts({
+      manifold,
+      cuts: [makeCut({ id: 'c', area: { enabled: true, width: 20, height: 20, offsetU: 0, offsetV: 0 } })],
+    });
+    const shifted = runCuts({
+      manifold,
+      cuts: [makeCut({ id: 's', area: { enabled: true, width: 20, height: 20, offsetU: 18, offsetV: 0 } })],
+    });
+    const a1 = centered.parts.find((p) => p.side === 'A')!.manifold;
+    const a2 = shifted.parts.find((p) => p.side === 'A')!.manifold;
+    const c1 = (a1.boundingBox().max[0] + a1.boundingBox().min[0]) / 2;
+    const c2 = (a2.boundingBox().max[0] + a2.boundingBox().min[0]) / 2;
+    // Окно сдвинуто на 18 мм по u — центр вырезанной части тоже сдвинулся.
+    expect(c2 - c1).toBeGreaterThan(15);
+  });
+});
+
 describe('экспорт частей', () => {
   it('каждая часть имеет корректные массивы и габарит', async () => {
     await boot();
