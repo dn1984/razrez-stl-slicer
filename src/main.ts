@@ -480,7 +480,31 @@ bindSwitch('extra-parallel', 'extraParallel', () => {
   updatePlaneVisual();
   schedulePreview(0);
 });
-bindSwitch('extra-visible', 'extraVisible', () => updatePlaneVisual());
+bindSwitch('extra-visible', 'extraVisible', () => {
+  updatePlaneVisual();
+  schedulePreview(0);
+});
+bindSwitch('extra-area-enabled', 'extraAreaEnabled', () => {
+  toggleGroup('extra-area', state.extraAreaEnabled);
+  updatePlaneVisual();
+  schedulePreview(0);
+});
+bindRange('extra-width', 'extraWidth', (v) => {
+  updatePlaneVisual();
+  return `${fmt(v, 0)} мм`;
+});
+bindRange('extra-height', 'extraHeight', (v) => {
+  updatePlaneVisual();
+  return `${fmt(v, 0)} мм`;
+});
+bindRange('extra-offset-u', 'extraOffsetU', (v) => {
+  updatePlaneVisual();
+  return `${fmt(v, 1)} мм`;
+});
+bindRange('extra-offset-v', 'extraOffsetV', (v) => {
+  updatePlaneVisual();
+  return `${fmt(v, 1)} мм`;
+});
 
 for (const button of $$('[data-extra-axis]')) {
   button.addEventListener('click', () => {
@@ -609,20 +633,40 @@ function updatePlaneVisual() {
     viewer.setPlane(cut.plane.point, cut.plane.normal, state.planeVisible && !busy);
   }
 
-  // Вторая плоскость: видна только когда включён второй рез.
+  // Вторая плоскость: своё окно, если у неё включена ограниченная область.
   if (state.extraEnabled) {
     const second = secondaryCut(state);
-    viewer.setPlane2(second.plane.point, second.plane.normal, state.extraVisible && !busy);
+    const visible = state.extraVisible && !busy;
+    if (state.extraAreaEnabled) {
+      const basis2 = basisFromNormal(second.plane.normal);
+      const p2: Vec3 = [
+        second.plane.point[0] + basis2.u[0] * state.extraOffsetU + basis2.v[0] * state.extraOffsetV,
+        second.plane.point[1] + basis2.u[1] * state.extraOffsetU + basis2.v[1] * state.extraOffsetV,
+        second.plane.point[2] + basis2.u[2] * state.extraOffsetU + basis2.v[2] * state.extraOffsetV,
+      ];
+      viewer.setPlane2(p2, second.plane.normal, visible, {
+        width: state.extraWidth,
+        height: state.extraHeight,
+      });
+    } else {
+      viewer.setPlane2(second.plane.point, second.plane.normal, visible);
+    }
   } else {
     viewer.setPlane2([0, 0, 0], [0, 0, 1], false);
   }
-  viewer.setOverlayVisible(state.planeVisible || (state.extraEnabled && state.extraVisible));
+  viewer.setOverlayVisible(true);
+  viewer.setSectionVisible(state.planeVisible, state.extraEnabled && state.extraVisible);
 }
 
 /* -------------------------------------------------------------- предпросмотр */
 
+/** Диагностика последнего предпросмотра (для тестов). */
+let lastPreviewInfo: Record<string, unknown> = {};
+
 let previewTimer = 0;
 let previewToken = 0;
+/** Показывали ли предупреждение «плоскость вне модели» (чтобы потом убрать). */
+let planeWarningShown = false;
 
 function schedulePreview(delay = 90) {
   if (!state.model) return;
@@ -635,15 +679,35 @@ async function runPreview() {
   if (!state.model) return;
   const token = ++previewToken;
   try {
-    const response = await ask<PreviewResponse>({ type: 'preview', cut: primaryCut(state) });
+    const extra = state.extraEnabled ? secondaryCut(state) : null;
+    const response = await ask<PreviewResponse>({
+      type: 'preview',
+      cut: primaryCut(state),
+      extra,
+    });
+    lastPreviewInfo = {
+      firstOk: Boolean(response.preview?.ok),
+      firstPolys: response.preview?.section.length ?? 0,
+      secondOk: Boolean(response.extraPreview?.ok),
+      secondPolys: response.extraPreview?.section.length ?? 0,
+      tokenOk: token === previewToken,
+    };
     if (token !== previewToken) return;
     viewer.setPreview(response.preview, state.pinDiameter / 2);
+    viewer.setPreview2(response.extraPreview, state.extraEnabled && state.extraVisible);
     setAreaCoverageWarning(Boolean(response.preview?.area?.coversSection));
     if (response.preview && !response.preview.ok) {
+      planeWarningShown = true;
       setStatus('warn', 'Плоскость вне модели', 'Сдвиньте плоскость ближе к центру детали.');
+    } else if (planeWarningShown) {
+      // Предупреждение было актуально раньше — убираем, чтобы не висело.
+      planeWarningShown = false;
+      setStatus('ok', 'Готов', state.model ? `${fmtInt(state.model.triangles)} треугольников` : '');
     }
-  } catch {
-    /* предпросмотр не критичен */
+  } catch (err) {
+    // Предпросмотр не критичен, но молча глотать ошибку нельзя: иначе контур
+    // просто исчезает и непонятно почему.
+    console.warn('Предпросмотр не удался:', err);
   }
 }
 
@@ -926,6 +990,10 @@ function syncInputsFromState() {
     ['tongue-depth', 'tongueDepth'],
     ['extra-pos', 'extraPos'],
     ['extra-angle', 'extraAngle'],
+    ['extra-width', 'extraWidth'],
+    ['extra-height', 'extraHeight'],
+    ['extra-offset-u', 'extraOffsetU'],
+    ['extra-offset-v', 'extraOffsetV'],
     ['explode', 'explode'],
   ] as const) {
     const input = document.getElementById(id) as HTMLInputElement | null;
@@ -940,6 +1008,7 @@ function syncInputsFromState() {
     ['extra-enabled', 'extraEnabled'],
     ['extra-parallel', 'extraParallel'],
     ['extra-visible', 'extraVisible'],
+    ['extra-area-enabled', 'extraAreaEnabled'],
     ['table-layout', 'tableLayout'],
   ] as const) {
     const input = document.getElementById(id) as HTMLInputElement | null;
@@ -955,6 +1024,7 @@ function syncInputsFromState() {
   toggleGroup('pins', state.pinsEnabled);
   toggleGroup('tongue', state.tongueEnabled);
   toggleGroup('extra', state.extraEnabled);
+  toggleGroup('extra-area', state.extraAreaEnabled);
   toggleGroup('cut-area', state.cutAreaEnabled);
   const extraAngle = $('#extra-angle') as HTMLInputElement | null;
   if (extraAngle) extraAngle.disabled = state.extraParallel;
@@ -1045,6 +1115,9 @@ declare global {
       parts: () => PartGeometry[];
       stats: () => CutStats[];
       center: () => [number, number, number];
+      /** Перерисовать плоскости и предпросмотр после правки state из теста. */
+      refresh: () => Promise<void>;
+      debugCounts: () => { first: number; second: number; firstVisible: boolean; secondVisible: boolean };
     };
   }
 }
@@ -1056,4 +1129,11 @@ window.__RAZREZ__ = {
   parts: () => lastParts,
   stats: () => lastStats,
   center: () => centerOf(state),
+  refresh: async () => {
+    syncRangeLimits();
+    updatePlaneVisual();
+    updateExtraInfo();
+    await runPreview();
+  },
+  debugCounts: () => ({ ...viewer.getDebugCounts(), preview: lastPreviewInfo }),
 };

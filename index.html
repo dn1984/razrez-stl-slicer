@@ -316,6 +316,43 @@
                 <span class="switch__track"></span>
                 <span class="switch__label">Показывать плоскость</span>
               </label>
+
+              <label class="switch">
+                <input type="checkbox" id="extra-area-enabled" />
+                <span class="switch__track"></span>
+                <span class="switch__label">Ограничить область второго реза</span>
+              </label>
+              <div data-group="extra-area" class="hidden">
+                <div class="field">
+                  <label class="field__label" for="extra-width">
+                    <span>Ширина области</span>
+                    <span class="field__value" data-value="extra-width">100 мм</span>
+                  </label>
+                  <input type="range" id="extra-width" min="1" max="600" step="1" value="100" />
+                </div>
+                <div class="field">
+                  <label class="field__label" for="extra-height">
+                    <span>Высота области</span>
+                    <span class="field__value" data-value="extra-height">100 мм</span>
+                  </label>
+                  <input type="range" id="extra-height" min="1" max="600" step="1" value="100" />
+                </div>
+                <div class="field">
+                  <label class="field__label" for="extra-offset-u">
+                    <span>Сдвиг по ширине</span>
+                    <span class="field__value" data-value="extra-offset-u">0,0 мм</span>
+                  </label>
+                  <input type="range" id="extra-offset-u" min="-300" max="300" step="1" value="0" />
+                </div>
+                <div class="field">
+                  <label class="field__label" for="extra-offset-v">
+                    <span>Сдвиг по высоте</span>
+                    <span class="field__value" data-value="extra-offset-v">0,0 мм</span>
+                  </label>
+                  <input type="range" id="extra-offset-v" min="-300" max="300" step="1" value="0" />
+                </div>
+              </div>
+
               <div class="notes" id="extra-info"></div>
             </div>
           </div>

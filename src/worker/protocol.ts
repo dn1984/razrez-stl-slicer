@@ -19,6 +19,8 @@ export interface PreviewRequest {
   type: 'preview';
   id: number;
   cut: CutSettings;
+  /** Второй рез — рисуется другим цветом, если включён. */
+  extra?: CutSettings | null;
 }
 
 export interface ResetRequest {
@@ -65,6 +67,8 @@ export interface PreviewResponse {
   ok: boolean;
   error?: string;
   preview: CutPreview | null;
+  /** Предпросмотр второго реза (если он включён). */
+  extraPreview?: CutPreview | null;
   ms: number;
 }
 

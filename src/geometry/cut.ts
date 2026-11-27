@@ -649,6 +649,27 @@ export function runCuts(input: CutInput): CutOutput {
     preview.ok = true;
     stats.push(cutStats);
     previews.push(preview);
+
+    // Отбрасываем «пылинки»: у границы окна иногда получается обрезок в доли
+    // кубического миллиметра. Он засоряет список частей и даёт пустой STL.
+    // Делаем это последним — раньше pairs ещё нужны для проверок.
+    const minPartVolume = Math.max(2, cutStats.volumeBefore * 1e-5);
+    let dropped = 0;
+    for (let i = next.length - 1; i >= 0; i--) {
+      const candidate = next[i];
+      if (owned.has(candidate.manifold) && safeVolume(candidate.manifold) < minPartVolume) {
+        candidate.manifold.delete();
+        owned.delete(candidate.manifold);
+        next.splice(i, 1);
+        dropped++;
+      }
+    }
+    if (dropped > 0) {
+      cutStats.warnings.push(
+        `Отброшено пустых обрезков: ${dropped}. Область реза почти не задевает эту часть — сдвиньте окно или плоскость.`,
+      );
+    }
+
     current = next;
   }
 

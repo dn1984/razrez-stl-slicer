@@ -44,6 +44,7 @@ export class Viewer {
   private readonly planeMesh2: THREE.Mesh;
   private readonly planeEdge2: THREE.Line;
   private readonly sectionLines: THREE.LineSegments;
+  private readonly sectionLines2: THREE.LineSegments;
   private readonly pinMarkers: THREE.InstancedMesh;
   private readonly profileArc: THREE.Line;
 
@@ -51,6 +52,9 @@ export class Viewer {
   private sourceMesh: THREE.Mesh | null = null;
   private selected: PartView | null = null;
   private sectionGeometryCount = 0;
+  private planeBaseSize = 100;
+  private showSection1 = true;
+  private showSection2 = true;
   private animationLoop: (() => void) | null = null;
 
   constructor(private readonly host: HTMLElement) {
@@ -155,10 +159,25 @@ export class Viewer {
 
     this.sectionLines = new THREE.LineSegments(
       new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: COLORS.section, linewidth: 2 }),
+      new THREE.LineBasicMaterial({ color: COLORS.section, linewidth: 2, depthTest: false, transparent: true }),
     );
     this.sectionLines.renderOrder = 4;
     this.overlay.add(this.sectionLines);
+
+    // Контур второго реза — тем же цветом, что и его плоскость.
+    this.sectionLines2 = new THREE.LineSegments(
+      new THREE.BufferGeometry(),
+      new THREE.LineDashedMaterial({
+        color: COLORS.plane2,
+        dashSize: 2.5,
+        gapSize: 1.6,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+      }),
+    );
+    this.sectionLines2.renderOrder = 4;
+    this.overlay.add(this.sectionLines2);
 
     this.pinMarkers = new THREE.InstancedMesh(
       new THREE.SphereGeometry(1, 16, 12),
@@ -388,6 +407,7 @@ export class Viewer {
 
   /** Размер плоскости реза — по габариту модели. */
   setPlaneSize(size: number) {
+    this.planeBaseSize = size;
     this.planeMesh.scale.set(size, size, 1);
     this.planeEdge.scale.set(size, size, 1);
     this.planeMesh2.scale.set(size, size, 1);
@@ -440,9 +460,19 @@ export class Viewer {
     this.planeEdge.visible = visible;
   }
 
-  /** Положение второй плоскости реза. */
-  setPlane2(point: Vec3, normal: Vec3, visible: boolean) {
+  /** Положение второй плоскости реза. rect — если у неё своё окно реза. */
+  setPlane2(
+    point: Vec3,
+    normal: Vec3,
+    visible: boolean,
+    rect?: { width: number; height: number } | null,
+  ) {
     const q = this.planeQuaternion(normal);
+    if (rect) {
+      this.planeMesh2.scale.set(Math.max(0.5, rect.width), Math.max(0.5, rect.height), 1);
+    } else {
+      this.planeMesh2.scale.set(this.planeBaseSize, this.planeBaseSize, 1);
+    }
     this.planeMesh2.position.set(point[0], point[1], point[2]);
     this.planeMesh2.quaternion.copy(q);
     this.planeMesh2.visible = visible;
@@ -453,11 +483,22 @@ export class Viewer {
   }
 
   setOverlayVisible(visible: boolean) {
-    this.overlay.visible = visible;
+    // Рамки плоскостей управляются своим видимостью, слой всегда в сцене.
+    this.overlay.visible = true;
     this.planeEdge.visible = visible;
   }
 
-  /** Контуры сечения и маркеры штифтов. */
+  /** Показывать контур первого и второго реза отдельно. */
+  setSectionVisible(first: boolean, second: boolean) {
+    this.showSection1 = first;
+    this.showSection2 = second;
+    this.sectionLines.visible = first;
+    this.pinMarkers.visible = first;
+    this.profileArc.visible = first && this.profileArc.visible;
+    this.sectionLines2.visible = second && (this.sectionLines2.geometry.getAttribute('position')?.count ?? 0) > 0;
+  }
+
+  /** Контуры сечения и маркеры штифтов первого реза. */
   setPreview(preview: CutPreview | null, pinRadius: number) {
     if (!preview || !preview.ok) {
       this.sectionLines.geometry.dispose();
@@ -481,6 +522,7 @@ export class Viewer {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
     this.sectionLines.geometry = geo;
+    this.sectionLines.visible = this.showSection1;
     this.sectionGeometryCount = preview.section.length;
 
     const count = Math.min(preview.pins.length, this.pinMarkers.instanceMatrix.count);
@@ -522,6 +564,41 @@ export class Viewer {
 
   get sectionCount() {
     return this.sectionGeometryCount;
+  }
+
+  /** Сколько контуров нарисовано для первого и второго реза (для тестов). */
+  getDebugCounts() {
+    const count = (line: THREE.LineSegments) => line.geometry.getAttribute('position')?.count ?? 0;
+    return {
+      first: count(this.sectionLines),
+      second: count(this.sectionLines2),
+      firstVisible: this.sectionLines.visible,
+      secondVisible: this.sectionLines2.visible,
+    };
+  }
+
+  /** Контур второго реза: пунктирная линия на модели. */
+  setPreview2(preview: CutPreview | null | undefined, visible: boolean) {
+    if (!preview || !preview.ok || !visible) {
+      this.sectionLines2.geometry.dispose();
+      this.sectionLines2.geometry = new THREE.BufferGeometry();
+      this.sectionLines2.visible = false;
+      return;
+    }
+    const points: number[] = [];
+    for (const poly of preview.section) {
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i];
+        const b = poly[(i + 1) % poly.length];
+        points.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+      }
+    }
+    this.sectionLines2.geometry.dispose();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+    this.sectionLines2.geometry = geo;
+    this.sectionLines2.computeLineDistances();
+    this.sectionLines2.visible = this.showSection2 && points.length > 0;
   }
 
   /* --------------------------------------------------------------- выделение */

@@ -60,6 +60,12 @@ export interface AppState {
   /** Держать второй рез параллельно первому (повторять его наклон). */
   extraParallel: boolean;
   extraVisible: boolean;
+  /** Ограниченная область второго реза. */
+  extraAreaEnabled: boolean;
+  extraWidth: number;
+  extraHeight: number;
+  extraOffsetU: number;
+  extraOffsetV: number;
 
   explode: number;
   tableLayout: boolean;
@@ -98,6 +104,11 @@ export function initialState(): AppState {
     extraAngle: 0,
     extraParallel: false,
     extraVisible: true,
+    extraAreaEnabled: false,
+    extraWidth: 100,
+    extraHeight: 100,
+    extraOffsetU: 0,
+    extraOffsetV: 0,
     explode: 0,
     tableLayout: false,
   };
@@ -240,6 +251,14 @@ export function primaryCut(state: AppState): CutSettings {
  */
 export function secondaryCut(state: AppState): CutSettings {
   const base = primaryCut(state);
+  // Своя ограниченная область у второго реза — независимо от первого.
+  const area = {
+    enabled: state.extraAreaEnabled,
+    width: state.extraWidth,
+    height: state.extraHeight,
+    offsetU: state.extraOffsetU,
+    offsetV: state.extraOffsetV,
+  };
   if (state.extraParallel) {
     // Нормаль берём у первого реза, точку отсчитываем от центра габарита.
     const first = base.plane;
@@ -254,6 +273,7 @@ export function secondaryCut(state: AppState): CutSettings {
       id: 'cut-2',
       name: 'Рез 2',
       plane: { point, normal: [first.normal[0], first.normal[1], first.normal[2]] },
+      area,
       profile: { shape: 'flat', height: 0, radius: null, falloff: 'smooth' },
     };
   }
@@ -262,6 +282,7 @@ export function secondaryCut(state: AppState): CutSettings {
     id: 'cut-2',
     name: 'Рез 2',
     plane: resolvePlane(state, state.extraAxis, state.extraPos, state.extraAngle),
+    area,
     // Второй рез всегда плоский: иначе замки двух резов могут пересечься.
     profile: { shape: 'flat', height: 0, radius: null, falloff: 'smooth' },
   };

@@ -163,11 +163,20 @@ function handleCompute(msg: Extract<WorkerRequest, { type: 'compute' }>) {
 function handlePreview(msg: Extract<WorkerRequest, { type: 'preview' }>) {
   const started = performance.now();
   if (!source) {
-    post({ type: 'preview', id: msg.id, ok: false, error: 'Модель не загружена.', preview: null, ms: 0 });
+    post({ type: 'preview', id: msg.id, ok: false, error: 'Модель не загружена.', preview: null, extraPreview: null, ms: 0 });
     return;
   }
   const preview = computePreview(source, msg.cut);
-  post({ type: 'preview', id: msg.id, ok: true, preview, ms: performance.now() - started });
+  // Второй рез показываем тем же предпросмотром — своя линия на модели.
+  const extraPreview = msg.extra ? computePreview(source, msg.extra) : null;
+  post({
+    type: 'preview',
+    id: msg.id,
+    ok: true,
+    preview,
+    extraPreview,
+    ms: performance.now() - started,
+  });
 }
 
 function computePreview(m: Manifold, cut: CutSettings): CutPreview {
@@ -175,19 +184,13 @@ function computePreview(m: Manifold, cut: CutSettings): CutPreview {
   const origin = cut.plane.point;
   const toLocal = worldToLocalMatrix(basis, origin);
   const local = m.transform(toLocal);
+  // После перевода в локальную систему координат плоскость среза — это z = 0,
+  // поэтому пересечение проверяется по локальному габариту. Раньше здесь
+  // мировая нормаль умножалось на локальные точки: тест почти всегда давал
+  // «плоскость вне модели», и контур среза не рисовался вовсе.
   const box = local.boundingBox();
-  const n = basis.n;
-  const d = n[0] * origin[0] + n[1] * origin[1] + n[2] * origin[2];
-  let minS = Infinity;
-  let maxS = -Infinity;
-  for (let i = 0; i < 8; i++) {
-    const x = i & 1 ? box.max[0] : box.min[0];
-    const y = i & 2 ? box.max[1] : box.min[1];
-    const z = i & 4 ? box.max[2] : box.min[2];
-    const s = n[0] * x + n[1] * y + n[2] * z - d;
-    if (s < minS) minS = s;
-    if (s > maxS) maxS = s;
-  }
+  const minS = box.min[2];
+  const maxS = box.max[2];
   const result: CutPreview = {
     id: cut.id,
     section: [],
